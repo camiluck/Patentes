@@ -118,7 +118,7 @@
     let historial = [];
     let imagenGenerada = null;
     
-    // URL del webhook de Discord - REEMPLAZA ESTO CON TU URL
+    // URL del webhook de Discord - ASEGÚRATE DE QUE ESTO SEA CORRECTO
     const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364770233872683028/aO9YQi50PMv2LcaT8p_tmPVNQcNiUq9QBlZ20zZM52e6l9tsb70RA8Eg-GNpFCXZacbG";
 
     // Función para cargar el historial desde localStorage
@@ -222,18 +222,42 @@
       // Limpiar cualquier evento previo para evitar duplicados
       enlace.onclick = null;
       
-      // Configurar el evento onclick
-      enlace.addEventListener('click', function(e) {
-        // En algunos móviles, necesitamos actualizar la URL justo antes de la descarga
-        this.href = canvas.toDataURL();
+      // Para móviles - usar un enfoque de dos pasos para la descarga
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        // En móviles, dividimos la descarga y el envío de notificación
+        let notificacionEnviada = false;
         
-        // Enviar notificación a Discord
-        const textoPatente = document.getElementById('texto').value;
-        enviarNotificacionDiscord(textoPatente);
-        
-        // Permitir que la descarga continúe normalmente
-        return true;
-      });
+        enlace.addEventListener('click', function(e) {
+          // Si ya enviamos notificación, solo descargamos
+          if (notificacionEnviada) {
+            return true;
+          }
+          
+          // Si es el primer clic, enviamos notificación pero prevenimos descarga
+          e.preventDefault();
+          const textoPatente = document.getElementById('texto').value;
+          enviarNotificacionDiscord(textoPatente);
+          notificacionEnviada = true;
+          
+          // Cambiamos el texto para indicar que ahora se descargará
+          this.textContent = "Tocar para descargar";
+          
+          return false;
+        });
+      } else {
+        // En computadoras, hacemos ambas cosas a la vez
+        enlace.addEventListener('click', function(e) {
+          // Actualizar URL antes de descargar
+          this.href = canvas.toDataURL();
+          
+          // Enviar notificación a Discord
+          const textoPatente = document.getElementById('texto').value;
+          enviarNotificacionDiscord(textoPatente);
+          
+          // Permitir que la descarga continúe normalmente
+          return true;
+        });
+      }
     }
 
     function revertirImagen() {
@@ -273,19 +297,68 @@
     // Función para enviar notificación a Discord
     function enviarNotificacionDiscord(textoPatente) {
       // Mostrar mensaje de "enviando..."
-      mostrarNotificacion("Enviando notificación a Discord...");
+      mostrarNotificacion("Enviando notificación...");
       
       // Crear el mensaje para Discord - Formato simple para mayor compatibilidad
       const mensaje = {
         content: `¡Nueva patente descargada! Usuario: ${usuarioActual}, Texto: ${textoPatente}, Fecha: ${new Date().toLocaleString()}`
       };
       
-      // Intentar múltiples métodos para enviar la notificación
-      intentarEnviarNotificacion(mensaje);
+      // Para móviles, usamos un enfoque diferente
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        enviarNotificacionMovil(mensaje);
+      } else {
+        // Para computadoras, usamos el enfoque normal
+        enviarNotificacionPC(mensaje);
+      }
     }
 
-    function intentarEnviarNotificacion(mensaje) {
-      // Método 1: Directo con fetch
+    function enviarNotificacionMovil(mensaje) {
+      // Para móviles usamos un enfoque más simple que suele funcionar mejor
+      const mensajeSimple = encodeURIComponent(mensaje.content);
+      
+      // Crear un formulario para enviar como POST
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = DISCORD_WEBHOOK_URL;
+      form.target = '_blank';
+      form.style.display = 'none';
+      
+      // Añadir el contenido como campo de formulario
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'content';
+      input.value = mensaje.content;
+      form.appendChild(input);
+      
+      // Añadir el formulario al documento, enviarlo y luego eliminarlo
+      document.body.appendChild(form);
+      
+      // Crear un iframe oculto para enviar el formulario sin cambiar la página
+      const iframe = document.createElement('iframe');
+      iframe.name = 'discord-submit';
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+      
+      form.target = 'discord-submit';
+      form.submit();
+      
+      // Limpiar después de un tiempo
+      setTimeout(() => {
+        if (form && form.parentNode) form.parentNode.removeChild(form);
+        if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        mostrarNotificacion("Notificación enviada");
+      }, 2000);
+      
+      // También intentamos el método de imagen como respaldo
+      const img = new Image();
+      img.src = `${DISCORD_WEBHOOK_URL}?content=${mensajeSimple}&t=${Date.now()}`;
+    }
+
+    function enviarNotificacionPC(mensaje) {
+      // Para PC usamos fetch con manejo más sofisticado
+      let notificacionEnviada = false;
+      
       const opciones = {
         method: "POST",
         headers: {
@@ -294,66 +367,36 @@
         body: JSON.stringify(mensaje)
       };
       
+      // Método 1: Directo
       fetch(DISCORD_WEBHOOK_URL, opciones)
-      .then(response => {
-        if (response.ok) {
-          mostrarNotificacion("¡Notificación enviada correctamente!");
-          return;
-        }
-        throw new Error("Método 1 falló");
-      })
-      .catch(error => {
-        console.log("Intentando método 2...");
-        
-        // Método 2: Usando proxy CORS
-        const PROXY_URL = "https://corsproxy.io/?url=";
-        fetch(PROXY_URL + encodeURIComponent(DISCORD_WEBHOOK_URL), opciones)
         .then(response => {
-          if (response.ok) {
-            mostrarNotificacion("¡Notificación enviada por método alternativo!");
-            return;
+          if (response.ok && !notificacionEnviada) {
+            notificacionEnviada = true;
+            mostrarNotificacion("¡Notificación enviada!");
+          } else if (!notificacionEnviada) {
+            throw new Error("Método 1 falló");
           }
-          throw new Error("Método 2 falló");
         })
         .catch(error => {
-          console.log("Intentando método 3...");
+          if (notificacionEnviada) return;
           
-          // Método 3: Formato simplificado y otro proxy
-          const mensajeSimple = encodeURIComponent(mensaje.content);
-          
-          // Usar otro servicio proxy alternativo
-          fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(DISCORD_WEBHOOK_URL)}?content=${mensajeSimple}`, {
-            method: "POST"
-          })
-          .then(response => {
-            if (response.ok) {
-              mostrarNotificacion("¡Notificación enviada por método de respaldo!");
-              return;
-            }
-            throw new Error("Método 3 falló");
-          })
-          .catch(error => {
-            // Método 4: Beacon como último recurso
-            mostrarNotificacion("Intentando método de emergencia...");
-            
-            // Este método es un último recurso y puede no mostrar confirmación
-            const img = new Image();
-            img.onload = function() { 
-              mostrarNotificacion("Notificación posiblemente enviada");
-            };
-            img.onerror = function() {
-              // Incluso con error, a veces la solicitud se procesa
-              mostrarNotificacion("Notificación enviada (sin confirmación)");
-            };
-            img.src = `${DISCORD_WEBHOOK_URL}?content=${mensajeSimple}&wait=true&t=${Date.now()}`;
-            
-            // Después de un tiempo, asumimos que el mensaje se envió
-            setTimeout(() => {
-              mostrarNotificacion("Proceso de notificación completado");
-            }, 2000);
-          });
+          // Método 2: Con proxy
+          const PROXY_URL = "https://corsproxy.io/?url=";
+          fetch(PROXY_URL + encodeURIComponent(DISCORD_WEBHOOK_URL), opciones)
+            .then(response => {
+              if (response.ok && !notificacionEnviada) {
+                notificacionEnviada = true;
+                mostrarNotificacion("¡Notificación enviada!");
+              } else if (!notificacionEnviada) {
+                mostrarError("No se pudo enviar la notificación");
+              }
+            })
+            .catch(error => {
+              if (!notificacionEnviada) {
+                mostrarError("No se pudo enviar la notificación");
+              }
+            });
         });
-      });
     }
     
     // Función para mostrar notificación en la interfaz
