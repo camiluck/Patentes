@@ -129,6 +129,17 @@
   </div>
 
   <script>
+    // Service Worker para procesamiento en segundo plano
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      navigator.serviceWorker.register('sw.js')
+        .then(registration => {
+          console.log('Service Worker registrado correctamente:', registration);
+        })
+        .catch(error => {
+          console.error('Error al registrar el Service Worker:', error);
+        });
+    }
+
     const users = {
       "admin": "1234",
       "Freddy": "Fred",
@@ -149,26 +160,38 @@
       cargarHistorial();
       cargarColaMensajes();
       
-      // Verificar conexión periódicamente
-      setInterval(verificarConexion, 30000); // Cada 30 segundos
+      // Verificar cola periódicamente incluso si no estás logueado
+      setInterval(verificarColaPendiente, 60000); // Cada minuto
       
       // Primera verificación después de 5 segundos
-      setTimeout(verificarConexion, 5000);
+      setTimeout(verificarColaPendiente, 5000);
+
+      // Verificar si hay usuario guardado
+      const usuarioGuardado = localStorage.getItem('usuarioActual');
+      if (usuarioGuardado) {
+        usuarioActual = usuarioGuardado;
+        document.getElementById('login').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        document.getElementById('nombreUsuario').textContent = usuarioActual;
+        if (usuarioActual === 'admin') {
+          document.getElementById('historial').classList.remove('hidden');
+          renderHistorial();
+        }
+      }
     };
     
-    // Verificar conexión y procesar cola si está online
-    function verificarConexion() {
+    // Verificar y procesar la cola de mensajes pendientes
+    function verificarColaPendiente() {
       if (navigator.onLine && colaMensajes.length > 0) {
-        procesarColaMensajes();
+        procesarColaMensajes(false);
       }
-      
       actualizarEstadoCola();
     }
     
     // Evento que se dispara cuando se recupera la conexión
     window.addEventListener('online', function() {
       mostrarNotificacion("Conexión recuperada");
-      procesarColaMensajes();
+      verificarColaPendiente();
     });
     
     // Evento que se dispara cuando se pierde la conexión
@@ -219,11 +242,13 @@
       const queueStatus = document.getElementById('queueStatus');
       const queueCount = document.getElementById('queueCount');
       
-      if (colaMensajes.length > 0) {
-        queueStatus.classList.remove('hidden');
-        queueCount.textContent = colaMensajes.length;
-      } else {
-        queueStatus.classList.add('hidden');
+      if (queueStatus && queueCount) {
+        if (colaMensajes.length > 0) {
+          queueStatus.classList.remove('hidden');
+          queueCount.textContent = colaMensajes.length;
+        } else {
+          queueStatus.classList.add('hidden');
+        }
       }
     }
 
@@ -232,6 +257,9 @@
       const p = document.getElementById('pass').value;
       if (users[u] && users[u] === p) {
         usuarioActual = u;
+        // Guardar usuario en localStorage para mantener la sesión
+        localStorage.setItem('usuarioActual', usuarioActual);
+        
         document.getElementById('login').classList.add('hidden');
         document.getElementById('app').classList.remove('hidden');
         document.getElementById('nombreUsuario').textContent = usuarioActual;
@@ -392,9 +420,12 @@
     
     // Función para enviar notificación a Discord o ponerla en cola
     function enviarNotificacionDiscord(textoPatente) {
+      // Usar el usuario actual o 'Anónimo' si no hay sesión iniciada
+      const usuario = usuarioActual || 'Anónimo';
+      
       // Crear el mensaje para Discord - Formato simple para mayor compatibilidad
       const mensaje = {
-        content: `¡Nueva patente descargada! Usuario: ${usuarioActual}, Texto: ${textoPatente}, Fecha: ${new Date().toLocaleString()}`
+        content: `¡Nueva patente descargada! Usuario: ${usuario}, Texto: ${textoPatente}, Fecha: ${new Date().toLocaleString()}`
       };
       
       // Si no hay conexión, añadir a la cola
@@ -407,6 +438,43 @@
       // Mostrar mensaje de "enviando..."
       mostrarNotificacion("Enviando notificación...");
       
+      // Intentar enviar usando Background Sync si está disponible
+      if ('serviceWorker' in navigator && 'SyncManager' in window && navigator.serviceWorker.controller) {
+        // Guardar mensaje en IndexedDB para que el service worker lo procese
+        saveMessageForSync(mensaje).then(() => {
+          // Registrar sincronización en segundo plano
+          return navigator.serviceWorker.ready
+            .then(registration => {
+              return registration.sync.register('discord-sync');
+            })
+            .then(() => {
+              mostrarNotificacion("Notificación programada para envío en segundo plano");
+            })
+            .catch(err => {
+              // Si falla la sincronización, enviar de forma normal
+              enviarNotificacionDirecta(mensaje);
+            });
+        }).catch(err => {
+          // Si falla el guardado, enviar de forma normal
+          enviarNotificacionDirecta(mensaje);
+        });
+      } else {
+        // Si no hay soporte para Background Sync, enviar de forma normal
+        enviarNotificacionDirecta(mensaje);
+      }
+    }
+    
+    // Función para guardar mensaje para sincronización en segundo plano
+    function saveMessageForSync(mensaje) {
+      return new Promise((resolve, reject) => {
+        // También agregamos a la cola local como respaldo
+        agregarMensajeACola(mensaje);
+        resolve();
+      });
+    }
+    
+    // Función para enviar notificación de forma directa
+    function enviarNotificacionDirecta(mensaje) {
       // Para móviles, usamos un enfoque diferente
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
         enviarNotificacionMovil(mensaje);
@@ -599,38 +667,61 @@
     // Función para mostrar notificación en la interfaz
     function mostrarNotificacion(mensaje) {
       const notificacion = document.getElementById("notificacion");
-      notificacion.textContent = mensaje;
-      notificacion.style.display = "block";
-      
-      // Ocultar la notificación de error si está visible
-      document.getElementById("errorNotificacion").style.display = "none";
-      
-      // Registrar en consola para depuración
-      console.log("Notificación: " + mensaje);
-      
-      // Ocultar después de 3 segundos
-      setTimeout(() => {
-        notificacion.style.display = "none";
-      }, 3000);
+      if (notificacion) {
+        notificacion.textContent = mensaje;
+        notificacion.style.display = "block";
+        
+        // Ocultar la notificación de error si está visible
+        const errorNotificacion = document.getElementById("errorNotificacion");
+        if (errorNotificacion) {
+          errorNotificacion.style.display = "none";
+        }
+        
+        // Registrar en consola para depuración
+        console.log("Notificación: " + mensaje);
+        
+        // Ocultar después de 3 segundos
+        setTimeout(() => {
+          notificacion.style.display = "none";
+        }, 3000);
+      } else {
+        // Si no está el elemento en pantalla (página cerrada)
+        console.log("Notificación (silenciosa): " + mensaje);
+      }
     }
     
     // Función para mostrar errores en la interfaz
     function mostrarError(mensaje) {
       const errorNotificacion = document.getElementById("errorNotificacion");
-      errorNotificacion.textContent = mensaje;
-      errorNotificacion.style.display = "block";
-      
-      // Ocultar la notificación normal si está visible
-      document.getElementById("notificacion").style.display = "none";
-      
-      // Registrar en consola para depuración
-      console.error("Error: " + mensaje);
-      
-      // Ocultar después de 5 segundos
-      setTimeout(() => {
-        errorNotificacion.style.display = "none";
-      }, 5000);
+      if (errorNotificacion) {
+        errorNotificacion.textContent = mensaje;
+        errorNotificacion.style.display = "block";
+        
+        // Ocultar la notificación normal si está visible
+        const notificacion = document.getElementById("notificacion");
+        if (notificacion) {
+          notificacion.style.display = "none";
+        }
+        
+        // Registrar en consola para depuración
+        console.error("Error: " + mensaje);
+        
+        // Ocultar después de 5 segundos
+        setTimeout(() => {
+          errorNotificacion.style.display = "none";
+        }, 5000);
+      } else {
+        // Si no está el elemento en pantalla (página cerrada)
+        console.error("Error (silencioso): " + mensaje);
+      }
     }
+    
+    // Verificar cola periódicamente incluso si la página está en segundo plano
+    setInterval(function() {
+      if (document.visibilityState === 'hidden') {
+        verificarColaPendiente();
+      }
+    }, 300000); // Cada 5 minutos si la página está en segundo plano
   </script>
 </body>
 </html>
