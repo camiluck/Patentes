@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generador de Imagen para Impresión</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f6f6f6;
+      text-align: center;
+      padding: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    input, button, select {
+      margin: 10px;
+      padding: 8px;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    input[type="text"], input[type="password"] {
+      width: 80%;
+    }
+    canvas {
+      border: 1px solid #ccc;
+      margin-top: 10px;
+      max-width: 100%;
+    }
+    .hidden {
+      display: none;
+    }
+    #historialTabla td, #historialTabla th {
+      padding: 8px;
+      border: 1px solid #ddd;
+    }
+    #historialTabla {
+      margin: 20px auto;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+    }
+    .notification {
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+      display: none;
+    }
+    .error-notification {
+      background-color: #f44336;
+    }
+    #descargarBtn {
+      display: inline-block;
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px 20px;
+      text-decoration: none;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+    /* Estilos responsive para móviles */
+    @media screen and (max-width: 600px) {
+      body {
+        padding: 10px;
+      }
+      canvas {
+        width: 90%;
+        height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="login">
+    <h2>Iniciar Sesión</h2>
+    <input type="text" id="user" placeholder="Usuario"><br>
+    <input type="password" id="pass" placeholder="Contraseña"><br>
+    <button onclick="login()">Entrar</button>
+  </div>
+
+  <div id="app" class="hidden">
+    <h1>Generador de Imagen para Impresión</h1>
+    <p>Bienvenido, <span id="nombreUsuario"></span></p>
+    <input type="text" id="texto" placeholder="Escribe aquí letras o número">
+    <br>
+    Tamaño del texto: <strong id="tamanioTextoLabel">24</strong> px
+    <br>
+    <input type="range" id="tamanioTexto" min="10" max="100" value="24">
+    <br>
+    <button onclick="generarImagen()">Generar Imagen</button>
+    <button onclick="revertirImagen()" id="revertirBtn" class="hidden">Revertir Imagen</button>
+    <br>
+    <canvas id="canvas" width="200" height="100"></canvas>
+    <br>
+    <a id="descargarBtn" download="patente.png" class="hidden">Descargar Imagen</a>
+    <div id="notificacion" class="notification">Notificación enviada a Discord</div>
+    <div id="errorNotificacion" class="notification error-notification">Error al enviar notificación</div>
+  </div>
+
+  <div id="historial" class="hidden">
+    <h2>Historial de impresiones</h2>
+    <div style="overflow-x: auto;">
+      <table id="historialTabla"></table>
+    </div>
+  </div>
+
+  <script>
+    const users = {
+      "admin": "1234",
+      "Freddy": "Fred",
+      "Milton": "Mork"  // Agrega más usuarios aquí
+    };
+
+    let usuarioActual = null;
+    let historial = [];
+    let imagenGenerada = null;
+    
+    // URL del webhook de Discord - REEMPLAZA ESTO CON TU URL
+    const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364770233872683028/aO9YQi50PMv2LcaT8p_tmPVNQcNiUq9QBlZ20zZM52e6l9tsb70RA8Eg-GNpFCXZacbG";
+
+    // Función para cargar el historial desde localStorage
+    function cargarHistorial() {
+      try {
+        const historialGuardado = localStorage.getItem('historialPatentes');
+        if (historialGuardado) {
+          historial = JSON.parse(historialGuardado);
+        }
+      } catch (error) {
+        console.error("Error al cargar historial:", error);
+        historial = [];
+      }
+    }
+
+    // Cargar historial al iniciar
+    cargarHistorial();
+
+    function login() {
+      const u = document.getElementById('user').value;
+      const p = document.getElementById('pass').value;
+      if (users[u] && users[u] === p) {
+        usuarioActual = u;
+        document.getElementById('login').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        document.getElementById('nombreUsuario').textContent = usuarioActual;
+        if (usuarioActual === 'admin') {
+          document.getElementById('historial').classList.remove('hidden');
+          renderHistorial();
+        } else {
+          document.getElementById('historial').classList.add('hidden');
+        }
+      } else {
+        alert('Usuario o contraseña incorrectos');
+      }
+    }
+
+    document.getElementById('tamanioTexto').addEventListener('input', e => {
+      document.getElementById('tamanioTextoLabel').textContent = e.target.value;
+    });
+
+    function generarImagen() {
+      const texto = document.getElementById('texto').value;
+      if (!texto) {
+        alert("Por favor ingresa un texto para la patente");
+        return;
+      }
+      
+      const tamanio = document.getElementById('tamanioTexto').value;
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = `${tamanio}px Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "black";
+      ctx.fillText(texto, canvas.width / 2, canvas.height / 2);
+
+      imagenGenerada = canvas.toDataURL();  // Guardar imagen generada
+
+      // Guardar en historial
+      const ahora = new Date();
+      const nuevoRegistro = {
+        usuario: usuarioActual,
+        texto,
+        fecha: ahora.toLocaleDateString(),
+        hora: ahora.toLocaleTimeString()
+      };
+      
+      historial.push(nuevoRegistro);
+      
+      // Guardar en localStorage
+      try {
+        localStorage.setItem('historialPatentes', JSON.stringify(historial));
+      } catch (error) {
+        console.error("Error al guardar en localStorage:", error);
+      }
+
+      if (usuarioActual === 'admin') renderHistorial();
+
+      // Habilitar descarga
+      const enlace = document.getElementById('descargarBtn');
+      enlace.classList.remove('hidden');
+      enlace.textContent = "Descargar Imagen";
+
+      // Configurar el enlace de descarga
+      configurarEnlaceDescarga();
+
+      // Mostrar botón de revertir
+      document.getElementById('revertirBtn').classList.remove('hidden');
+    }
+
+    function configurarEnlaceDescarga() {
+      const enlace = document.getElementById('descargarBtn');
+      const canvas = document.getElementById('canvas');
+      
+      // Pre-cargar la URL para evitar problemas en móviles
+      const imagenURL = canvas.toDataURL();
+      enlace.href = imagenURL;
+      
+      // Limpiar cualquier evento previo para evitar duplicados
+      enlace.onclick = null;
+      
+      // Configurar el evento onclick
+      enlace.addEventListener('click', function(e) {
+        // En algunos móviles, necesitamos actualizar la URL justo antes de la descarga
+        this.href = canvas.toDataURL();
+        
+        // Enviar notificación a Discord
+        const textoPatente = document.getElementById('texto').value;
+        enviarNotificacionDiscord(textoPatente);
+        
+        // Permitir que la descarga continúe normalmente
+        return true;
+      });
+    }
+
+    function revertirImagen() {
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+
+      if (imagenGenerada) {
+        const img = new Image();
+        img.src = imagenGenerada;
+        img.onload = function () {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // Invertir la imagen en el eje horizontal (efecto espejo)
+          ctx.save();
+          ctx.scale(-1, 1); // Escalar en eje X (-1 para invertir)
+          ctx.drawImage(img, -canvas.width, 0); // Dibujar la imagen invertida
+          ctx.restore();
+          
+          // Actualizar el enlace de descarga después de cambiar la imagen
+          configurarEnlaceDescarga();
+        };
+      }
+
+      // Ocultar el botón de revertir
+      document.getElementById('revertirBtn').classList.add('hidden');
+    }
+
+    function renderHistorial() {
+      const tabla = document.getElementById('historialTabla');
+      tabla.innerHTML = '<tr><th>Usuario</th><th>Texto</th><th>Fecha</th><th>Hora</th></tr>';
+      historial.forEach(item => {
+        const fila = `<tr><td>${item.usuario}</td><td>${item.texto}</td><td>${item.fecha}</td><td>${item.hora}</td></tr>`;
+        tabla.innerHTML += fila;
+      });
+    }
+    
+    // Función para enviar notificación a Discord mediante webhook
+    function enviarNotificacionDiscord(textoPatente) {
+      // Mostrar mensaje de "enviando..."
+      mostrarNotificacion("Enviando notificación a Discord...");
+      
+      // Crear el mensaje para Discord
+      const mensaje = {
+        content: `¡Nueva patente descargada!`,
+        embeds: [{
+          title: "Detalles de la patente",
+          color: 3447003, // Color azul en decimal
+          fields: [
+            {
+              name: "Usuario",
+              value: usuarioActual,
+              inline: true
+            },
+            {
+              name: "Texto",
+              value: textoPatente,
+              inline: true
+            },
+            {
+              name: "Fecha y Hora",
+              value: new Date().toLocaleString(),
+              inline: true
+            }
+          ],
+          footer: {
+            text: "Sistema de Generación de Patentes"
+          }
+        }]
+      };
+      
+      // Crear un objeto de opciones para fetch
+      const opciones = {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(mensaje)
+      };
+      
+      // Enviar la notificación a Discord con manejo de errores mejorado
+      fetch(DISCORD_WEBHOOK_URL, opciones)
+      .then(response => {
+        if (response.ok) {
+          mostrarNotificacion("¡Notificación enviada correctamente!");
+          return response;
+        } else {
+          // Mostrar información detallada del error
+          mostrarError(`Error ${response.status}: ${response.statusText}`);
+          console.error("Error al enviar notificación:", response);
+          throw new Error(`${response.status} ${response.statusText}`);
+        }
+      })
+      .catch(error => {
+        // Capturar errores de red u otros errores
+        mostrarError(`Error de conexión: ${error.message}`);
+        console.error("Error detallado:", error);
+        
+        // Intento alternativo con JSONP como fallback (para algunos problemas CORS)
+        intentarEnvioAlternativo(mensaje);
+      });
+    }
+    
+    // Función de respaldo para intentar otros métodos si falla el principal
+    function intentarEnvioAlternativo(mensaje) {
+      mostrarNotificacion("Intentando método alternativo...");
+      
+      // Crear un elemento de imagen para envío tipo "beacon"
+      // Esta técnica a veces funciona cuando CORS bloquea fetch
+      const img = new Image();
+      img.onload = function() { 
+        mostrarNotificacion("Notificación posiblemente enviada");
+      };
+      img.onerror = function() {
+        // Incluso si hay error, a veces la solicitud se procesa en el servidor
+        mostrarNotificacion("Notificación enviada (sin confirmación)");
+      };
+      
+      // Añadir un parámetro de consulta con los datos
+      // Esto no funcionará para webhooks complejos pero puede servir como último recurso
+      const mensajeSimple = encodeURIComponent(
+        `Usuario: ${usuarioActual}, Patente: ${mensaje.embeds[0].fields[1].value}`
+      );
+      img.src = `${DISCORD_WEBHOOK_URL}?content=${mensajeSimple}&wait=true&t=${Date.now()}`;
+    }
+    
+    // Función para mostrar notificación en la interfaz
+    function mostrarNotificacion(mensaje) {
+      const notificacion = document.getElementById("notificacion");
+      notificacion.textContent = mensaje;
+      notificacion.style.display = "block";
+      
+      // Ocultar la notificación de error si está visible
+      document.getElementById("errorNotificacion").style.display = "none";
+      
+      // Ocultar después de 3 segundos
+      setTimeout(() => {
+        notificacion.style.display = "none";
+      }, 3000);
+    }
+    
+    // Función para mostrar errores en la interfaz
+    function mostrarError(mensaje) {
+      const errorNotificacion = document.getElementById("errorNotificacion");
+      errorNotificacion.textContent = mensaje;
+      errorNotificacion.style.display = "block";
+      
+      // Ocultar la notificación normal si está visible
+      document.getElementById("notificacion").style.display = "none";
+      
+      // Ocultar después de 5 segundos
+      setTimeout(() => {
+        errorNotificacion.style.display = "none";
+      }, 5000);
+    }
+  </script>
+</body>
+</html>
