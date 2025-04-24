@@ -4,12 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Generador de Imagen para Impresión</title>
-  <!-- Enlaces PWA -->
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#4CAF50">
-  <link rel="apple-touch-icon" href="icons/icon-192x192.png">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -84,23 +78,6 @@
       margin-top: 10px;
       color: #666;
     }
-    .install-prompt {
-      background-color: #2196F3;
-      color: white;
-      padding: 10px;
-      border-radius: 5px;
-      margin-bottom: 15px;
-      display: none;
-    }
-    .install-btn {
-      background-color: white;
-      color: #2196F3;
-      border: none;
-      padding: 5px 10px;
-      border-radius: 3px;
-      cursor: pointer;
-      margin-left: 10px;
-    }
     /* Estilos responsive para móviles */
     @media screen and (max-width: 600px) {
       body {
@@ -114,11 +91,6 @@
   </style>
 </head>
 <body>
-  <div id="install-prompt" class="install-prompt">
-    Instala esta aplicación en tu dispositivo
-    <button id="install-btn" class="install-btn">Instalar</button>
-  </div>
-  
   <div id="login">
     <h2>Iniciar Sesión</h2>
     <input type="text" id="user" placeholder="Usuario"><br>
@@ -157,73 +129,16 @@
   </div>
 
   <script>
-    // PWA - Registrar Service Worker
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
-          .then(registration => {
-            console.log('Service Worker registrado correctamente:', registration);
-          })
-          .catch(error => {
-            console.error('Error al registrar el Service Worker:', error);
-          });
-      });
-    }
-    
-    // PWA - Lógica para mostrar el banner de instalación
-    let deferredPrompt;
-    
-    window.addEventListener('beforeinstallprompt', (e) => {
-      // Prevenir que Chrome muestre automáticamente la solicitud
-      e.preventDefault();
-      // Almacenar el evento para usarlo más tarde
-      deferredPrompt = e;
-      // Actualizar la UI para mostrar el botón de instalación
-      const installPrompt = document.getElementById('install-prompt');
-      installPrompt.style.display = 'block';
-    });
-    
-    // Manejar el clic en el botón de instalación
-    document.getElementById('install-btn').addEventListener('click', (e) => {
-      // Ocultar el banner de instalación
-      const installPrompt = document.getElementById('install-prompt');
-      installPrompt.style.display = 'none';
-      
-      // Mostrar la solicitud de instalación
-      deferredPrompt.prompt();
-      
-      // Esperar a que el usuario responda a la solicitud
-      deferredPrompt.userChoice.then((choiceResult) => {
-        if (choiceResult.outcome === 'accepted') {
-          console.log('Usuario aceptó instalar la PWA');
-        } else {
-          console.log('Usuario rechazó instalar la PWA');
-        }
-        // Limpiar la variable
-        deferredPrompt = null;
-      });
-    });
-    
-    // PWA - Manejar mensajes del Service Worker
-    navigator.serviceWorker.addEventListener('message', function(event) {
-      const data = event.data;
-      
-      if (data.action === 'NOTIFICATION') {
-        mostrarNotificacion(data.message);
-      }
-      
-      if (data.action === 'UPDATE_QUEUE') {
-        colaMensajes = data.colaMensajes;
-        guardarColaMensajes();
-        actualizarEstadoCola();
-      }
-      
-      if (data.action === 'GET_QUEUE') {
-        event.ports[0].postMessage({
-          colaMensajes: colaMensajes
+    // Service Worker para procesamiento en segundo plano
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      navigator.serviceWorker.register('sw.js')
+        .then(registration => {
+          console.log('Service Worker registrado correctamente:', registration);
+        })
+        .catch(error => {
+          console.error('Error al registrar el Service Worker:', error);
         });
-      }
-    });
+    }
 
     const users = {
       "admin": "1234",
@@ -236,7 +151,6 @@
     let imagenGenerada = null;
     let colaMensajes = [];
     let revisandoCola = false;
-    let notificacionDuplicadaTimer = null;
     
     // URL del webhook de Discord - ASEGÚRATE DE QUE ESTO SEA CORRECTO
     const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364770233872683028/aO9YQi50PMv2LcaT8p_tmPVNQcNiUq9QBlZ20zZM52e6l9tsb70RA8Eg-GNpFCXZacbG";
@@ -392,7 +306,7 @@
       // Guardar en historial
       const ahora = new Date();
       const nuevoRegistro = {
-        usuario: usuarioActual || 'Anónimo',
+        usuario: usuarioActual,
         texto,
         fecha: ahora.toLocaleDateString(),
         hora: ahora.toLocaleTimeString()
@@ -432,9 +346,6 @@
       // Limpiar cualquier evento previo para evitar duplicados
       enlace.onclick = null;
       
-      // Añadir un identificador único para evitar duplicados
-      const notificacionId = Date.now().toString();
-      
       // Para móviles - usar un enfoque de dos pasos para la descarga
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
         // En móviles, dividimos la descarga y el envío de notificación
@@ -449,7 +360,7 @@
           // Si es el primer clic, enviamos notificación pero prevenimos descarga
           e.preventDefault();
           const textoPatente = document.getElementById('texto').value;
-          enviarNotificacionDiscord(textoPatente, notificacionId);
+          enviarNotificacionDiscord(textoPatente);
           notificacionEnviada = true;
           
           // Cambiamos el texto para indicar que ahora se descargará
@@ -465,7 +376,7 @@
           
           // Enviar notificación a Discord
           const textoPatente = document.getElementById('texto').value;
-          enviarNotificacionDiscord(textoPatente, notificacionId);
+          enviarNotificacionDiscord(textoPatente);
           
           // Permitir que la descarga continúe normalmente
           return true;
@@ -507,27 +418,8 @@
       });
     }
     
-    // Sistema para evitar notificaciones duplicadas
-    const notificacionesEnviadas = new Set();
-    
     // Función para enviar notificación a Discord o ponerla en cola
-    function enviarNotificacionDiscord(textoPatente, notificacionId) {
-      // Verificar si esta notificación ya se envió (prevenir duplicados)
-      if (notificacionId && notificacionesEnviadas.has(notificacionId)) {
-        console.log("Evitando envío duplicado de notificación");
-        return;
-      }
-      
-      // Marcar como enviada para evitar duplicados
-      if (notificacionId) {
-        notificacionesEnviadas.add(notificacionId);
-        
-        // Limpiar el registro después de un tiempo para no acumular demasiados IDs
-        setTimeout(() => {
-          notificacionesEnviadas.delete(notificacionId);
-        }, 60000); // Limpiar después de 1 minuto
-      }
-      
+    function enviarNotificacionDiscord(textoPatente) {
       // Usar el usuario actual o 'Anónimo' si no hay sesión iniciada
       const usuario = usuarioActual || 'Anónimo';
       
