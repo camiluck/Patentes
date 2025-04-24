@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generador de Imagen para Impresión</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f6f6f6;
+      text-align: center;
+      padding: 50px;
+    }
+    input, button, select {
+      margin: 10px;
+    }
+    canvas {
+      border: 1px solid #ccc;
+      margin-top: 10px;
+    }
+    .hidden {
+      display: none;
+    }
+    #historialTabla td, #historialTabla th {
+      padding: 8px;
+      border: 1px solid #ddd;
+    }
+    #historialTabla {
+      margin: 20px auto;
+      border-collapse: collapse;
+    }
+    .notification {
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="login">
+    <h2>Iniciar Sesión</h2>
+    <input type="text" id="user" placeholder="Usuario"><br>
+    <input type="password" id="pass" placeholder="Contraseña"><br>
+    <button onclick="login()">Entrar</button>
+  </div>
+
+  <div id="app" class="hidden">
+    <h1>Generador de Imagen para Impresión</h1>
+    <p>Bienvenido, <span id="nombreUsuario"></span></p>
+    <input type="text" id="texto" placeholder="Escribe aquí letras o número">
+    <br>
+    Tamaño del texto: <strong id="tamanioTextoLabel">24</strong> px
+    <br>
+    <input type="range" id="tamanioTexto" min="10" max="100" value="24">
+    <br>
+    <button onclick="generarImagen()">Generar Imagen</button>
+    <button onclick="revertirImagen()" id="revertirBtn" class="hidden">Revertir Imagen</button>
+    <br>
+    <canvas id="canvas" width="200" height="100"></canvas>
+    <br>
+    <a id="descargarBtn" download="patente.png" class="hidden">Descargar Imagen</a>
+    <div id="notificacion" class="notification">Notificación enviada a Discord</div>
+  </div>
+
+  <div id="historial" class="hidden">
+    <h2>Historial de impresiones</h2>
+    <table id="historialTabla"></table>
+  </div>
+
+  <script>
+    const users = {
+      "admin": "1234",
+      "Freddy": "Fred",
+      "Milton": "Mork"  // Agrega más usuarios aquí
+    };
+
+    let usuarioActual = null;
+    let historial = [];
+    let imagenGenerada = null;
+    
+    // URL del webhook de Discord (esta es una URL de ejemplo, deberás reemplazarla con tu propia URL de webhook)
+    const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364770233872683028/aO9YQi50PMv2LcaT8p_tmPVNQcNiUq9QBlZ20zZM52e6l9tsb70RA8Eg-GNpFCXZacbG";
+
+    // Función para cargar el historial desde localStorage
+    function cargarHistorial() {
+      const historialGuardado = localStorage.getItem('historialPatentes');
+      if (historialGuardado) {
+        historial = JSON.parse(historialGuardado);
+      }
+    }
+
+    // Cargar historial al iniciar
+    cargarHistorial();
+
+    function login() {
+      const u = document.getElementById('user').value;
+      const p = document.getElementById('pass').value;
+      if (users[u] && users[u] === p) {
+        usuarioActual = u;
+        document.getElementById('login').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        document.getElementById('nombreUsuario').textContent = usuarioActual;
+        if (usuarioActual === 'admin') {
+          document.getElementById('historial').classList.remove('hidden');
+          renderHistorial();
+        } else {
+          document.getElementById('historial').classList.add('hidden');
+        }
+      } else {
+        alert('Usuario o contraseña incorrectos');
+      }
+    }
+
+    document.getElementById('tamanioTexto').addEventListener('input', e => {
+      document.getElementById('tamanioTextoLabel').textContent = e.target.value;
+    });
+
+    function generarImagen() {
+      const texto = document.getElementById('texto').value;
+      const tamanio = document.getElementById('tamanioTexto').value;
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = `${tamanio}px Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "black";
+      ctx.fillText(texto, canvas.width / 2, canvas.height / 2);
+
+      imagenGenerada = canvas.toDataURL();  // Guardar imagen generada
+
+      // Guardar en historial
+      const ahora = new Date();
+      const nuevoRegistro = {
+        usuario: usuarioActual,
+        texto,
+        fecha: ahora.toLocaleDateString(),
+        hora: ahora.toLocaleTimeString()
+      };
+      
+      historial.push(nuevoRegistro);
+      
+      // Guardar en localStorage
+      localStorage.setItem('historialPatentes', JSON.stringify(historial));
+
+      if (usuarioActual === 'admin') renderHistorial();
+
+      // Habilitar descarga
+      const enlace = document.getElementById('descargarBtn');
+      enlace.classList.remove('hidden');
+      enlace.textContent = "Descargar Imagen";
+
+      // Actualiza la imagen del enlace y configura el evento de descarga
+      enlace.onclick = function () {
+        const canvas = document.getElementById('canvas');
+        enlace.href = canvas.toDataURL();  // Usa el canvas actual
+        
+        // Enviar notificación a Discord
+        enviarNotificacionDiscord(texto);
+      };
+
+      // Mostrar botón de revertir
+      document.getElementById('revertirBtn').classList.remove('hidden');
+    }
+
+    function revertirImagen() {
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+
+      if (imagenGenerada) {
+        const img = new Image();
+        img.src = imagenGenerada;
+        img.onload = function () {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // Invertir la imagen en el eje horizontal (efecto espejo)
+          ctx.save();
+          ctx.scale(-1, 1); // Escalar en eje X (-1 para invertir)
+          ctx.drawImage(img, -canvas.width, 0); // Dibujar la imagen invertida
+          ctx.restore();
+        };
+      }
+
+      // Ocultar el botón de revertir
+      document.getElementById('revertirBtn').classList.add('hidden');
+    }
+
+    function renderHistorial() {
+      const tabla = document.getElementById('historialTabla');
+      tabla.innerHTML = '<tr><th>Usuario</th><th>Texto</th><th>Fecha</th><th>Hora</th></tr>';
+      historial.forEach(item => {
+        const fila = `<tr><td>${item.usuario}</td><td>${item.texto}</td><td>${item.fecha}</td><td>${item.hora}</td></tr>`;
+        tabla.innerHTML += fila;
+      });
+    }
+    
+    // Función para enviar notificación a Discord mediante webhook
+    function enviarNotificacionDiscord(textoPatente) {
+      // Crear el mensaje para Discord
+      const mensaje = {
+        content: `¡Nueva patente descargada!`,
+        embeds: [{
+          title: "Detalles de la patente",
+          color: 3447003, // Color azul en decimal
+          fields: [
+            {
+              name: "Usuario",
+              value: usuarioActual,
+              inline: true
+            },
+            {
+              name: "Texto",
+              value: textoPatente,
+              inline: true
+            },
+            {
+              name: "Fecha y Hora",
+              value: new Date().toLocaleString(),
+              inline: true
+            }
+          ],
+          footer: {
+            text: "Sistema de Generación de Patentes"
+          }
+        }]
+      };
+      
+      // Enviar la notificación a Discord
+      fetch(DISCORD_WEBHOOK_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(mensaje)
+      })
+      .then(response => {
+        if (response.ok) {
+          mostrarNotificacion("Notificación enviada a Discord correctamente");
+        } else {
+          console.error("Error al enviar notificación:", response.statusText);
+        }
+      })
+      .catch(error => {
+        console.error("Error al enviar notificación:", error);
+      });
+    }
+    
+    // Función para mostrar notificación en la interfaz
+    function mostrarNotificacion(mensaje) {
+      const notificacion = document.getElementById("notificacion");
+      notificacion.textContent = mensaje;
+      notificacion.style.display = "block";
+      
+      // Ocultar después de 3 segundos
+      setTimeout(() => {
+        notificacion.style.display = "none";
+      }, 3000);
+    }
+  </script>
+</body>
+</html>
