@@ -61,6 +61,23 @@
       border-radius: 4px;
       margin-top: 10px;
     }
+    .badge {
+      display: inline-block;
+      background-color: #ff5722;
+      color: white;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      text-align: center;
+      line-height: 20px;
+      font-size: 12px;
+      margin-left: 5px;
+    }
+    #queueStatus {
+      font-size: 14px;
+      margin-top: 10px;
+      color: #666;
+    }
     /* Estilos responsive para móviles */
     @media screen and (max-width: 600px) {
       body {
@@ -98,6 +115,10 @@
     <a id="descargarBtn" download="patente.png" class="hidden">Descargar Imagen</a>
     <div id="notificacion" class="notification">Notificación enviada a Discord</div>
     <div id="errorNotificacion" class="notification error-notification">Error al enviar notificación</div>
+    <div id="queueStatus" class="hidden">
+      Notificaciones pendientes: <span id="queueCount">0</span>
+      <button id="sendQueueBtn" onclick="procesarColaMensajes(true)">Enviar ahora</button>
+    </div>
   </div>
 
   <div id="historial" class="hidden">
@@ -117,9 +138,44 @@
     let usuarioActual = null;
     let historial = [];
     let imagenGenerada = null;
+    let colaMensajes = [];
+    let revisandoCola = false;
     
     // URL del webhook de Discord - ASEGÚRATE DE QUE ESTO SEA CORRECTO
     const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364770233872683028/aO9YQi50PMv2LcaT8p_tmPVNQcNiUq9QBlZ20zZM52e6l9tsb70RA8Eg-GNpFCXZacbG";
+
+    // Cargar datos al iniciar
+    window.onload = function() {
+      cargarHistorial();
+      cargarColaMensajes();
+      
+      // Verificar conexión periódicamente
+      setInterval(verificarConexion, 30000); // Cada 30 segundos
+      
+      // Primera verificación después de 5 segundos
+      setTimeout(verificarConexion, 5000);
+    };
+    
+    // Verificar conexión y procesar cola si está online
+    function verificarConexion() {
+      if (navigator.onLine && colaMensajes.length > 0) {
+        procesarColaMensajes();
+      }
+      
+      actualizarEstadoCola();
+    }
+    
+    // Evento que se dispara cuando se recupera la conexión
+    window.addEventListener('online', function() {
+      mostrarNotificacion("Conexión recuperada");
+      procesarColaMensajes();
+    });
+    
+    // Evento que se dispara cuando se pierde la conexión
+    window.addEventListener('offline', function() {
+      mostrarError("Conexión perdida - Las notificaciones se guardarán");
+      actualizarEstadoCola();
+    });
 
     // Función para cargar el historial desde localStorage
     function cargarHistorial() {
@@ -134,8 +190,42 @@
       }
     }
 
-    // Cargar historial al iniciar
-    cargarHistorial();
+    // Función para cargar la cola de mensajes desde localStorage
+    function cargarColaMensajes() {
+      try {
+        const colaGuardada = localStorage.getItem('colaMensajesDiscord');
+        if (colaGuardada) {
+          colaMensajes = JSON.parse(colaGuardada);
+          actualizarEstadoCola();
+        }
+      } catch (error) {
+        console.error("Error al cargar cola de mensajes:", error);
+        colaMensajes = [];
+      }
+    }
+    
+    // Función para guardar la cola de mensajes en localStorage
+    function guardarColaMensajes() {
+      try {
+        localStorage.setItem('colaMensajesDiscord', JSON.stringify(colaMensajes));
+        actualizarEstadoCola();
+      } catch (error) {
+        console.error("Error al guardar cola de mensajes:", error);
+      }
+    }
+    
+    // Función para actualizar la visualización del estado de la cola
+    function actualizarEstadoCola() {
+      const queueStatus = document.getElementById('queueStatus');
+      const queueCount = document.getElementById('queueCount');
+      
+      if (colaMensajes.length > 0) {
+        queueStatus.classList.remove('hidden');
+        queueCount.textContent = colaMensajes.length;
+      } else {
+        queueStatus.classList.add('hidden');
+      }
+    }
 
     function login() {
       const u = document.getElementById('user').value;
@@ -150,6 +240,12 @@
           renderHistorial();
         } else {
           document.getElementById('historial').classList.add('hidden');
+        }
+        
+        // Verificar cola de mensajes al iniciar sesión
+        actualizarEstadoCola();
+        if (navigator.onLine && colaMensajes.length > 0) {
+          setTimeout(procesarColaMensajes, 2000);
         }
       } else {
         alert('Usuario o contraseña incorrectos');
@@ -294,15 +390,22 @@
       });
     }
     
-    // Función para enviar notificación a Discord
+    // Función para enviar notificación a Discord o ponerla en cola
     function enviarNotificacionDiscord(textoPatente) {
-      // Mostrar mensaje de "enviando..."
-      mostrarNotificacion("Enviando notificación...");
-      
       // Crear el mensaje para Discord - Formato simple para mayor compatibilidad
       const mensaje = {
         content: `¡Nueva patente descargada! Usuario: ${usuarioActual}, Texto: ${textoPatente}, Fecha: ${new Date().toLocaleString()}`
       };
+      
+      // Si no hay conexión, añadir a la cola
+      if (!navigator.onLine) {
+        agregarMensajeACola(mensaje);
+        mostrarNotificacion("Sin conexión. Notificación guardada para envío posterior.");
+        return;
+      }
+      
+      // Mostrar mensaje de "enviando..."
+      mostrarNotificacion("Enviando notificación...");
       
       // Para móviles, usamos un enfoque diferente
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
@@ -312,91 +415,185 @@
         enviarNotificacionPC(mensaje);
       }
     }
-
-    function enviarNotificacionMovil(mensaje) {
-      // Para móviles usamos un enfoque más simple que suele funcionar mejor
-      const mensajeSimple = encodeURIComponent(mensaje.content);
-      
-      // Crear un formulario para enviar como POST
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = DISCORD_WEBHOOK_URL;
-      form.target = '_blank';
-      form.style.display = 'none';
-      
-      // Añadir el contenido como campo de formulario
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = 'content';
-      input.value = mensaje.content;
-      form.appendChild(input);
-      
-      // Añadir el formulario al documento, enviarlo y luego eliminarlo
-      document.body.appendChild(form);
-      
-      // Crear un iframe oculto para enviar el formulario sin cambiar la página
-      const iframe = document.createElement('iframe');
-      iframe.name = 'discord-submit';
-      iframe.style.display = 'none';
-      document.body.appendChild(iframe);
-      
-      form.target = 'discord-submit';
-      form.submit();
-      
-      // Limpiar después de un tiempo
-      setTimeout(() => {
-        if (form && form.parentNode) form.parentNode.removeChild(form);
-        if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
-        mostrarNotificacion("Notificación enviada");
-      }, 2000);
-      
-      // También intentamos el método de imagen como respaldo
-      const img = new Image();
-      img.src = `${DISCORD_WEBHOOK_URL}?content=${mensajeSimple}&t=${Date.now()}`;
+    
+    // Función para agregar un mensaje a la cola
+    function agregarMensajeACola(mensaje) {
+      colaMensajes.push({
+        mensaje: mensaje,
+        timestamp: new Date().getTime()
+      });
+      guardarColaMensajes();
+      actualizarEstadoCola();
     }
-
-    function enviarNotificacionPC(mensaje) {
-      // Para PC usamos fetch con manejo más sofisticado
-      let notificacionEnviada = false;
+    
+    // Función para procesar la cola de mensajes
+    function procesarColaMensajes(manual = false) {
+      // Si ya estamos procesando o no hay mensajes, salir
+      if (revisandoCola || colaMensajes.length === 0) return;
       
+      // Si no hay conexión, salir
+      if (!navigator.onLine) {
+        if (manual) {
+          mostrarError("No hay conexión a internet. Inténtalo más tarde.");
+        }
+        return;
+      }
+      
+      revisandoCola = true;
+      
+      if (manual) {
+        mostrarNotificacion("Enviando notificaciones pendientes...");
+      }
+      
+      // Tomar el primer mensaje de la cola
+      const item = colaMensajes[0];
+      
+      // Opciones para el envío
       const opciones = {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(mensaje)
+        body: JSON.stringify(item.mensaje)
       };
       
-      // Método 1: Directo
+      // Intentar enviar el mensaje
       fetch(DISCORD_WEBHOOK_URL, opciones)
         .then(response => {
-          if (response.ok && !notificacionEnviada) {
-            notificacionEnviada = true;
-            mostrarNotificacion("¡Notificación enviada!");
-          } else if (!notificacionEnviada) {
-            throw new Error("Método 1 falló");
+          if (response.ok) {
+            // Si el envío fue exitoso, eliminar de la cola
+            colaMensajes.shift();
+            guardarColaMensajes();
+            
+            if (manual) {
+              mostrarNotificacion(`Notificación enviada (quedan ${colaMensajes.length})`);
+            }
+            
+            // Si hay más mensajes, procesar el siguiente después de una pausa
+            if (colaMensajes.length > 0) {
+              setTimeout(() => {
+                revisandoCola = false;
+                procesarColaMensajes(manual);
+              }, 1000); // Esperar 1 segundo entre envíos
+            } else {
+              revisandoCola = false;
+              if (manual) {
+                mostrarNotificacion("Todas las notificaciones pendientes enviadas");
+              }
+            }
+          } else {
+            // Si hubo un error, intentar con proxy
+            throw new Error("Error al enviar");
           }
         })
         .catch(error => {
-          if (notificacionEnviada) return;
-          
-          // Método 2: Con proxy
+          // Probar con proxy
           const PROXY_URL = "https://corsproxy.io/?url=";
           fetch(PROXY_URL + encodeURIComponent(DISCORD_WEBHOOK_URL), opciones)
             .then(response => {
-              if (response.ok && !notificacionEnviada) {
-                notificacionEnviada = true;
-                mostrarNotificacion("¡Notificación enviada!");
-              } else if (!notificacionEnviada) {
-                mostrarError("No se pudo enviar la notificación");
+              if (response.ok) {
+                // Si el envío fue exitoso, eliminar de la cola
+                colaMensajes.shift();
+                guardarColaMensajes();
+                
+                if (manual) {
+                  mostrarNotificacion(`Notificación enviada (quedan ${colaMensajes.length})`);
+                }
+              } else {
+                if (manual) {
+                  mostrarError("No se pudo enviar la notificación.");
+                }
+              }
+              
+              // Terminar el procesamiento actual
+              revisandoCola = false;
+              
+              // Si hay más mensajes, procesar el siguiente
+              if (colaMensajes.length > 0 && response.ok) {
+                setTimeout(() => procesarColaMensajes(manual), 1000);
               }
             })
             .catch(error => {
-              if (!notificacionEnviada) {
-                mostrarError("No se pudo enviar la notificación");
+              revisandoCola = false;
+              if (manual) {
+                mostrarError("No se pudo enviar la notificación.");
               }
             });
         });
+    }
+
+    function enviarNotificacionMovil(mensaje) {
+      // Primero intentamos enviar directamente
+      if (navigator.onLine) {
+        const opciones = {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(mensaje)
+        };
+        
+        fetch(DISCORD_WEBHOOK_URL, opciones)
+          .then(response => {
+            if (response.ok) {
+              mostrarNotificacion("¡Notificación enviada!");
+              return;
+            }
+            throw new Error("Falló el envío directo");
+          })
+          .catch(error => {
+            // Si falla, agregar a la cola
+            agregarMensajeACola(mensaje);
+            mostrarNotificacion("Notificación guardada para reintento.");
+          });
+      } else {
+        // Si no hay conexión, agregar a la cola
+        agregarMensajeACola(mensaje);
+        mostrarNotificacion("Sin conexión. Notificación guardada.");
+      }
+    }
+
+    function enviarNotificacionPC(mensaje) {
+      // Primero intentamos enviar directamente
+      if (navigator.onLine) {
+        const opciones = {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(mensaje)
+        };
+        
+        fetch(DISCORD_WEBHOOK_URL, opciones)
+          .then(response => {
+            if (response.ok) {
+              mostrarNotificacion("¡Notificación enviada!");
+              return;
+            }
+            throw new Error("Falló el envío directo");
+          })
+          .catch(error => {
+            // Intentamos con proxy
+            const PROXY_URL = "https://corsproxy.io/?url=";
+            fetch(PROXY_URL + encodeURIComponent(DISCORD_WEBHOOK_URL), opciones)
+              .then(response => {
+                if (response.ok) {
+                  mostrarNotificacion("¡Notificación enviada!");
+                  return;
+                }
+                throw new Error("Falló el envío con proxy");
+              })
+              .catch(error => {
+                // Si fallan ambos métodos, agregar a la cola
+                agregarMensajeACola(mensaje);
+                mostrarNotificacion("Notificación guardada para reintento.");
+              });
+          });
+      } else {
+        // Si no hay conexión, agregar a la cola
+        agregarMensajeACola(mensaje);
+        mostrarNotificacion("Sin conexión. Notificación guardada.");
+      }
     }
     
     // Función para mostrar notificación en la interfaz
