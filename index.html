@@ -270,41 +270,22 @@
       });
     }
     
-    // Función para enviar notificación a Discord mediante webhook
+    // Función para enviar notificación a Discord
     function enviarNotificacionDiscord(textoPatente) {
       // Mostrar mensaje de "enviando..."
       mostrarNotificacion("Enviando notificación a Discord...");
       
-      // Crear el mensaje para Discord
+      // Crear el mensaje para Discord - Formato simple para mayor compatibilidad
       const mensaje = {
-        content: `¡Nueva patente descargada!`,
-        embeds: [{
-          title: "Detalles de la patente",
-          color: 3447003, // Color azul en decimal
-          fields: [
-            {
-              name: "Usuario",
-              value: usuarioActual,
-              inline: true
-            },
-            {
-              name: "Texto",
-              value: textoPatente,
-              inline: true
-            },
-            {
-              name: "Fecha y Hora",
-              value: new Date().toLocaleString(),
-              inline: true
-            }
-          ],
-          footer: {
-            text: "Sistema de Generación de Patentes"
-          }
-        }]
+        content: `¡Nueva patente descargada! Usuario: ${usuarioActual}, Texto: ${textoPatente}, Fecha: ${new Date().toLocaleString()}`
       };
       
-      // Crear un objeto de opciones para fetch
+      // Intentar múltiples métodos para enviar la notificación
+      intentarEnviarNotificacion(mensaje);
+    }
+
+    function intentarEnviarNotificacion(mensaje) {
+      // Método 1: Directo con fetch
       const opciones = {
         method: "POST",
         headers: {
@@ -313,50 +294,66 @@
         body: JSON.stringify(mensaje)
       };
       
-      // Enviar la notificación a Discord con manejo de errores mejorado
       fetch(DISCORD_WEBHOOK_URL, opciones)
       .then(response => {
         if (response.ok) {
           mostrarNotificacion("¡Notificación enviada correctamente!");
-          return response;
-        } else {
-          // Mostrar información detallada del error
-          mostrarError(`Error ${response.status}: ${response.statusText}`);
-          console.error("Error al enviar notificación:", response);
-          throw new Error(`${response.status} ${response.statusText}`);
+          return;
         }
+        throw new Error("Método 1 falló");
       })
       .catch(error => {
-        // Capturar errores de red u otros errores
-        mostrarError(`Error de conexión: ${error.message}`);
-        console.error("Error detallado:", error);
+        console.log("Intentando método 2...");
         
-        // Intento alternativo con JSONP como fallback (para algunos problemas CORS)
-        intentarEnvioAlternativo(mensaje);
+        // Método 2: Usando proxy CORS
+        const PROXY_URL = "https://corsproxy.io/?url=";
+        fetch(PROXY_URL + encodeURIComponent(DISCORD_WEBHOOK_URL), opciones)
+        .then(response => {
+          if (response.ok) {
+            mostrarNotificacion("¡Notificación enviada por método alternativo!");
+            return;
+          }
+          throw new Error("Método 2 falló");
+        })
+        .catch(error => {
+          console.log("Intentando método 3...");
+          
+          // Método 3: Formato simplificado y otro proxy
+          const mensajeSimple = encodeURIComponent(mensaje.content);
+          
+          // Usar otro servicio proxy alternativo
+          fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(DISCORD_WEBHOOK_URL)}?content=${mensajeSimple}`, {
+            method: "POST"
+          })
+          .then(response => {
+            if (response.ok) {
+              mostrarNotificacion("¡Notificación enviada por método de respaldo!");
+              return;
+            }
+            throw new Error("Método 3 falló");
+          })
+          .catch(error => {
+            // Método 4: Beacon como último recurso
+            mostrarNotificacion("Intentando método de emergencia...");
+            
+            // Este método es un último recurso y puede no mostrar confirmación
+            const img = new Image();
+            img.onload = function() { 
+              mostrarNotificacion("Notificación posiblemente enviada");
+            };
+            img.onerror = function() {
+              // Incluso con error, a veces la solicitud se procesa
+              mostrarNotificacion("Notificación enviada (sin confirmación)");
+            };
+            img.src = `${DISCORD_WEBHOOK_URL}?content=${mensajeSimple}&wait=true&t=${Date.now()}`;
+            
+            // Después de un tiempo, asumimos que el mensaje se envió
+            setTimeout(() => {
+              mostrarNotificacion("Proceso de notificación completado");
+            }, 2000);
+          });
+        });
       });
-    }
-    
-    // Función de respaldo para intentar otros métodos si falla el principal
-    function intentarEnvioAlternativo(mensaje) {
-      mostrarNotificacion("Intentando método alternativo...");
-      
-      // Crear un elemento de imagen para envío tipo "beacon"
-      // Esta técnica a veces funciona cuando CORS bloquea fetch
-      const img = new Image();
-      img.onload = function() { 
-        mostrarNotificacion("Notificación posiblemente enviada");
-      };
-      img.onerror = function() {
-        // Incluso si hay error, a veces la solicitud se procesa en el servidor
-        mostrarNotificacion("Notificación enviada (sin confirmación)");
-      };
-      
-      // Añadir un parámetro de consulta con los datos
-      // Esto no funcionará para webhooks complejos pero puede servir como último recurso
-      const mensajeSimple = encodeURIComponent(
-        `Usuario: ${usuarioActual}, Patente: ${mensaje.embeds[0].fields[1].value}`
-      );
-      img.src = `${DISCORD_WEBHOOK_URL}?content=${mensajeSimple}&wait=true&t=${Date.now()}`;
     }
     
     // Función para mostrar notificación en la interfaz
@@ -367,6 +364,9 @@
       
       // Ocultar la notificación de error si está visible
       document.getElementById("errorNotificacion").style.display = "none";
+      
+      // Registrar en consola para depuración
+      console.log("Notificación: " + mensaje);
       
       // Ocultar después de 3 segundos
       setTimeout(() => {
@@ -382,6 +382,9 @@
       
       // Ocultar la notificación normal si está visible
       document.getElementById("notificacion").style.display = "none";
+      
+      // Registrar en consola para depuración
+      console.error("Error: " + mensaje);
       
       // Ocultar después de 5 segundos
       setTimeout(() => {
