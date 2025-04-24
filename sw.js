@@ -1,16 +1,93 @@
-// Service Worker para enviar notificaciones en segundo plano
+// Service Worker para PWA y procesamiento en segundo plano
+const CACHE_NAME = 'patentes-app-v1';
 const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364770233872683028/aO9YQi50PMv2LcaT8p_tmPVNQcNiUq9QBlZ20zZM52e6l9tsb70RA8Eg-GNpFCXZacbG";
+
+// Archivos para cachear inicialmente
+const urlsToCache = [
+  '/Patentes/',
+  '/Patentes/index.html',
+  '/Patentes/manifest.json',
+  '/Patentes/icons/icon-192x192.png',
+  '/Patentes/icons/icon-512x512.png'
+];
 
 // Instalar el Service Worker
 self.addEventListener('install', event => {
-  console.log('Service Worker instalado');
-  self.skipWaiting(); // Forzar la activación inmediata
+  console.log('Service Worker instalándose');
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => {
+        console.log('Caché abierto');
+        return cache.addAll(urlsToCache);
+      })
+      .then(() => self.skipWaiting()) // Forzar la activación inmediata
+  );
 });
 
 // Activar el Service Worker
 self.addEventListener('activate', event => {
   console.log('Service Worker activado');
-  return self.clients.claim(); // Tomar el control de los clientes inmediatamente
+  // Limpiar caches antiguos
+  event.waitUntil(
+    caches.keys().then(cacheNames => {
+      return Promise.all(
+        cacheNames.map(cacheName => {
+          if (cacheName !== CACHE_NAME) {
+            console.log('Eliminando caché antiguo:', cacheName);
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    }).then(() => self.clients.claim()) // Tomar el control de los clientes inmediatamente
+  );
+});
+
+// Manejar solicitudes de red
+self.addEventListener('fetch', event => {
+  // No interceptar solicitudes a Discord o proxies
+  if (event.request.url.includes('discord.com') || 
+      event.request.url.includes('corsproxy.io') ||
+      event.request.url.includes('allorigins.win')) {
+    return;
+  }
+  
+  event.respondWith(
+    caches.match(event.request)
+      .then(response => {
+        // Si hay coincidencia en caché, devolver respuesta cacheada
+        if (response) {
+          return response;
+        }
+        
+        // Si no hay coincidencia, ir a la red
+        return fetch(event.request)
+          .then(networkResponse => {
+            // Si la respuesta no es válida, simplemente devolver la respuesta
+            if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+              return networkResponse;
+            }
+            
+            // Clonar la respuesta (porque se consume al usarla)
+            var responseToCache = networkResponse.clone();
+            
+            // Guardar en caché para futuras solicitudes
+            caches.open(CACHE_NAME)
+              .then(cache => {
+                cache.put(event.request, responseToCache);
+              });
+            
+            return networkResponse;
+          })
+          .catch(() => {
+            // Si hay error de red y es una solicitud de página/documento, mostrar página offline
+            if (event.request.mode === 'navigate') {
+              return caches.match('/Patentes/offline.html');
+            }
+            // Para otros recursos, simplemente fallar
+            return new Response('Sin conexión');
+          });
+      })
+  );
 });
 
 // Manejar eventos de sincronización
@@ -27,6 +104,25 @@ self.addEventListener('periodicsync', event => {
     console.log('Sincronización periódica de mensajes');
     event.waitUntil(procesarColaMensajes());
   }
+});
+
+// Manejar notificaciones push
+self.addEventListener('push', event => {
+  const data = event.data.json();
+  
+  const options = {
+    body: data.body || 'Hay notificaciones pendientes por enviar',
+    icon: '/Patentes/icons/icon-192x192.png',
+    badge: '/Patentes/icons/badge-72x72.png',
+    vibrate: [100, 50, 100],
+    data: {
+      url: data.url || '/Patentes/'
+    }
+  };
+  
+  event.waitUntil(
+    self.registration.showNotification('Generador de Patentes', options)
+  );
 });
 
 // Función para procesar cola de mensajes desde localStorage
