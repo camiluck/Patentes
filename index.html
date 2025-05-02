@@ -26,7 +26,13 @@
       border: 1px solid #ccc;
       margin-top: 10px;
       max-width: 100%;
-      background-color: #FFFFFF; /* Fondo blanco puro para el canvas */
+      background-color: #FFFFFF !important; /* Fondo blanco puro para el canvas */
+    }
+    #canvasContainer {
+      background-color: #FFFFFF;
+      display: inline-block;
+      padding: 5px;
+      border: 1px solid #ddd;
     }
     .hidden {
       display: none;
@@ -111,7 +117,9 @@
     <button onclick="generarImagen()">Generar Imagen</button>
     <button onclick="revertirImagen()" id="revertirBtn" class="hidden">Revertir Imagen</button>
     <br>
-    <canvas id="canvas" width="200" height="100"></canvas>
+    <div id="canvasContainer">
+      <canvas id="canvas" width="200" height="100"></canvas>
+    </div>
     <br>
     <a id="descargarBtn" download="patente.png" class="hidden">Descargar Imagen</a>
     <div id="notificacion" class="notification">Notificación enviada a Discord</div>
@@ -154,9 +162,8 @@
     let revisandoCola = false;
     
     // URL del webhook de Discord - ASEGÚRATE DE QUE ESTO SEA CORRECTO
-    const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364770233872683028/aO9YQi50PMv2LcaT8p_tmPVNQcNiUq9QBlZ20zZM52e6l9tsb70RA8Eg-GNpFCXZacbG";
+    const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364802693012521000/MBUF565wKk7lV_xJgy5e4JqNCOI-PYOCUm1E3VxuJt9DWQ8StrXVrQGK8IOmIa0tmfz9";
 
-    // Cargar datos al iniciar
     window.onload = function() {
       cargarHistorial();
       cargarColaMensajes();
@@ -167,6 +174,15 @@
       // Primera verificación después de 5 segundos
       setTimeout(verificarColaPendiente, 5000);
 
+      // Configurar color de fondo del canvas al cargar
+      const canvas = document.getElementById('canvas');
+      if (canvas) {
+        canvas.style.backgroundColor = "#FFFFFF";
+        const ctx = canvas.getContext('2d', { alpha: false });
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      
       // Verificar si hay usuario guardado
       const usuarioGuardado = localStorage.getItem('usuarioActual');
       if (usuarioGuardado) {
@@ -304,9 +320,15 @@
       // Mantener el tamaño visual en la página mediante CSS
       canvas.style.width = "200px";
       canvas.style.height = "100px";
-      canvas.style.backgroundColor = "#FFFFFF"; // Asegurar que el canvas tenga fondo blanco en la página
       
-      const ctx = canvas.getContext('2d');
+      // Asegurar que el canvas tenga fondo blanco
+      canvas.style.backgroundColor = "#FFFFFF";
+      document.getElementById('canvasContainer').style.backgroundColor = "#FFFFFF";
+      
+      const ctx = canvas.getContext('2d', { alpha: false }); // Deshabilitar transparencia
+      
+      // Limpiar completamente el canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       
       // Primero dibujamos un fondo blanco puro para asegurar que no sea transparente
       ctx.fillStyle = "#FFFFFF";
@@ -369,7 +391,7 @@
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = canvas.width;
       tempCanvas.height = canvas.height;
-      const tempCtx = tempCanvas.getContext('2d');
+      const tempCtx = tempCanvas.getContext('2d', { alpha: false }); // Deshabilitar transparencia
       
       // Dibujar fondo blanco puro
       tempCtx.fillStyle = '#FFFFFF';
@@ -380,7 +402,22 @@
       
       // Generar URL a partir del canvas temporal con fondo blanco puro
       const imagenURL = tempCanvas.toDataURL('image/png', 1.0);
-      enlace.href = imagenURL;
+      
+      // Pre-cargar una imagen para verificar que el fondo sea correcto
+      const img = new Image();
+      img.onload = function() {
+        const verifyCanvas = document.createElement('canvas');
+        verifyCanvas.width = img.width;
+        verifyCanvas.height = img.height;
+        const verifyCtx = verifyCanvas.getContext('2d');
+        verifyCtx.fillStyle = '#FFFFFF';
+        verifyCtx.fillRect(0, 0, verifyCanvas.width, verifyCanvas.height);
+        verifyCtx.drawImage(img, 0, 0);
+        
+        // Usar esta imagen verificada para la descarga
+        enlace.href = verifyCanvas.toDataURL('image/png', 1.0);
+      };
+      img.src = imagenURL;
       
       // Limpiar cualquier evento previo para evitar duplicados
       enlace.onclick = null;
