@@ -153,7 +153,7 @@
     let revisandoCola = false;
     
     // URL del webhook de Discord - ASEGÚRATE DE QUE ESTO SEA CORRECTO
-    const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364770233872683028/aO9YQi50PMv2LcaT8p_tmPVNQcNiUq9QBlZ20zZM52e6l9tsb70RA8Eg-GNpFCXZacbG";
+    const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364802693012521000/MBUF565wKk7lV_xJgy5e4JqNCOI-PYOCUm1E3VxuJt9DWQ8StrXVrQGK8IOmIa0tmfz9";
 
     // Cargar datos al iniciar
     window.onload = function() {
@@ -273,7 +273,8 @@
         // Verificar cola de mensajes al iniciar sesión
         actualizarEstadoCola();
         if (navigator.onLine && colaMensajes.length > 0) {
-          setTimeout(procesarColaMensajes, 2000);
+          // Envío inmediato sin delay
+          procesarColaMensajes(true);
         }
       } else {
         alert('Usuario o contraseña incorrectos');
@@ -293,15 +294,35 @@
       
       const tamanio = document.getElementById('tamanioTexto').value;
       const canvas = document.getElementById('canvas');
+      
+      // Aumentar la resolución del canvas (factor 4x para mejor calidad)
+      const factorEscala = 4; // Mejor calidad
+      canvas.width = 200 * factorEscala;
+      canvas.height = 100 * factorEscala;
+      
+      // Mantener el tamaño visual en la página mediante CSS
+      canvas.style.width = "200px";
+      canvas.style.height = "100px";
+      
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Escalar el contexto para compensar el aumento de resolución
+      ctx.scale(factorEscala, factorEscala);
+      
+      // Ajuste para mejorar la nitidez de la fuente
       ctx.font = `${tamanio}px Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillStyle = "black";
-      ctx.fillText(texto, canvas.width / 2, canvas.height / 2);
+      
+      // Asegurar que dibujamos en el centro correcto
+      ctx.fillText(texto, canvas.width / (2 * factorEscala), canvas.height / (2 * factorEscala));
+      
+      // Restaurar la escala para futuros dibujos
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-      imagenGenerada = canvas.toDataURL();  // Guardar imagen generada
+      imagenGenerada = canvas.toDataURL('image/png', 1.0);  // Máxima calidad
 
       // Guardar en historial
       const ahora = new Date();
@@ -340,43 +361,34 @@
       const canvas = document.getElementById('canvas');
       
       // Pre-cargar la URL para evitar problemas en móviles
-      const imagenURL = canvas.toDataURL();
+      const imagenURL = canvas.toDataURL('image/png', 1.0);
       enlace.href = imagenURL;
       
       // Limpiar cualquier evento previo para evitar duplicados
       enlace.onclick = null;
       
-      // Para móviles - usar un enfoque de dos pasos para la descarga
+      // Para móviles - usar un enfoque más directo para la descarga
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-        // En móviles, dividimos la descarga y el envío de notificación
-        let notificacionEnviada = false;
-        
-        enlace.addEventListener('click', function(e) {
-          // Si ya enviamos notificación, solo descargamos
-          if (notificacionEnviada) {
-            return true;
-          }
+        // En móviles, simplificamos el proceso para que sea más inmediato
+        enlace.addEventListener('click', function() {
+          // Verificar URL antes de descargar
+          this.href = canvas.toDataURL('image/png', 1.0);
           
-          // Si es el primer clic, enviamos notificación pero prevenimos descarga
-          e.preventDefault();
+          // Enviar notificación inmediatamente
           const textoPatente = document.getElementById('texto').value;
-          enviarNotificacionDiscord(textoPatente);
-          notificacionEnviada = true;
+          enviarNotificacionInmediata(textoPatente);
           
-          // Cambiamos el texto para indicar que ahora se descargará
-          this.textContent = "Tocar para descargar";
-          
-          return false;
+          return true;
         });
       } else {
-        // En computadoras, hacemos ambas cosas a la vez
-        enlace.addEventListener('click', function(e) {
+        // En computadoras, también hacemos el proceso inmediato
+        enlace.addEventListener('click', function() {
           // Actualizar URL antes de descargar
-          this.href = canvas.toDataURL();
+          this.href = canvas.toDataURL('image/png', 1.0);
           
-          // Enviar notificación a Discord
+          // Enviar notificación a Discord inmediatamente
           const textoPatente = document.getElementById('texto').value;
-          enviarNotificacionDiscord(textoPatente);
+          enviarNotificacionInmediata(textoPatente);
           
           // Permitir que la descarga continúe normalmente
           return true;
@@ -387,6 +399,7 @@
     function revertirImagen() {
       const canvas = document.getElementById('canvas');
       const ctx = canvas.getContext('2d');
+      const factorEscala = 4; // Usar el mismo factor de escala que en generarImagen
 
       if (imagenGenerada) {
         const img = new Image();
@@ -396,9 +409,12 @@
 
           // Invertir la imagen en el eje horizontal (efecto espejo)
           ctx.save();
-          ctx.scale(-1, 1); // Escalar en eje X (-1 para invertir)
-          ctx.drawImage(img, -canvas.width, 0); // Dibujar la imagen invertida
+          ctx.scale(-factorEscala, factorEscala); // Escalar con el factor y mantener la inversión
+          ctx.drawImage(img, -canvas.width/factorEscala, 0, canvas.width/factorEscala, canvas.height/factorEscala); // Ajustar para la escala
           ctx.restore();
+          
+          // Guardar la nueva versión invertida
+          imagenGenerada = canvas.toDataURL('image/png', 1.0);
           
           // Actualizar el enlace de descarga después de cambiar la imagen
           configurarEnlaceDescarga();
@@ -418,8 +434,8 @@
       });
     }
     
-    // Función para enviar notificación a Discord o ponerla en cola
-    function enviarNotificacionDiscord(textoPatente) {
+    // Nueva función para envío inmediato de notificaciones
+    function enviarNotificacionInmediata(textoPatente) {
       // Usar el usuario actual o 'Anónimo' si no hay sesión iniciada
       const usuario = usuarioActual || 'Anónimo';
       
@@ -438,50 +454,46 @@
       // Mostrar mensaje de "enviando..."
       mostrarNotificacion("Enviando notificación...");
       
-      // Intentar enviar usando Background Sync si está disponible
-      if ('serviceWorker' in navigator && 'SyncManager' in window && navigator.serviceWorker.controller) {
-        // Guardar mensaje en IndexedDB para que el service worker lo procese
-        saveMessageForSync(mensaje).then(() => {
-          // Registrar sincronización en segundo plano
-          return navigator.serviceWorker.ready
-            .then(registration => {
-              return registration.sync.register('discord-sync');
-            })
-            .then(() => {
-              mostrarNotificacion("Notificación programada para envío en segundo plano");
+      // Enviar directamente sin delay
+      const opciones = {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(mensaje)
+      };
+      
+      fetch(DISCORD_WEBHOOK_URL, opciones)
+        .then(response => {
+          if (response.ok) {
+            mostrarNotificacion("¡Notificación enviada correctamente!");
+            return;
+          }
+          throw new Error("Error al enviar notificación");
+        })
+        .catch(error => {
+          // Si falla, intentar con proxy sin delay
+          const PROXY_URL = "https://corsproxy.io/?url=";
+          fetch(PROXY_URL + encodeURIComponent(DISCORD_WEBHOOK_URL), opciones)
+            .then(response => {
+              if (response.ok) {
+                mostrarNotificacion("¡Notificación enviada correctamente!");
+                return;
+              }
+              throw new Error("Error al enviar notificación con proxy");
             })
             .catch(err => {
-              // Si falla la sincronización, enviar de forma normal
-              enviarNotificacionDirecta(mensaje);
+              // Si ambos métodos fallan, agregar a la cola
+              agregarMensajeACola(mensaje);
+              mostrarNotificacion("No se pudo enviar la notificación ahora. Se intentará más tarde.");
             });
-        }).catch(err => {
-          // Si falla el guardado, enviar de forma normal
-          enviarNotificacionDirecta(mensaje);
         });
-      } else {
-        // Si no hay soporte para Background Sync, enviar de forma normal
-        enviarNotificacionDirecta(mensaje);
-      }
     }
     
-    // Función para guardar mensaje para sincronización en segundo plano
-    function saveMessageForSync(mensaje) {
-      return new Promise((resolve, reject) => {
-        // También agregamos a la cola local como respaldo
-        agregarMensajeACola(mensaje);
-        resolve();
-      });
-    }
-    
-    // Función para enviar notificación de forma directa
-    function enviarNotificacionDirecta(mensaje) {
-      // Para móviles, usamos un enfoque diferente
-      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-        enviarNotificacionMovil(mensaje);
-      } else {
-        // Para computadoras, usamos el enfoque normal
-        enviarNotificacionPC(mensaje);
-      }
+    // Función para enviar notificación a Discord o ponerla en cola
+    function enviarNotificacionDiscord(textoPatente) {
+      // Esta función ahora simplemente redirige a la función de envío inmediato
+      enviarNotificacionInmediata(textoPatente);
     }
     
     // Función para agregar un mensaje a la cola
@@ -537,12 +549,10 @@
               mostrarNotificacion(`Notificación enviada (quedan ${colaMensajes.length})`);
             }
             
-            // Si hay más mensajes, procesar el siguiente después de una pausa
+            // Si hay más mensajes, procesar el siguiente inmediatamente
             if (colaMensajes.length > 0) {
-              setTimeout(() => {
-                revisandoCola = false;
-                procesarColaMensajes(manual);
-              }, 1000); // Esperar 1 segundo entre envíos
+              revisandoCola = false;
+              procesarColaMensajes(manual);
             } else {
               revisandoCola = false;
               if (manual) {
@@ -555,7 +565,7 @@
           }
         })
         .catch(error => {
-          // Probar con proxy
+          // Probar con proxy inmediatamente
           const PROXY_URL = "https://corsproxy.io/?url=";
           fetch(PROXY_URL + encodeURIComponent(DISCORD_WEBHOOK_URL), opciones)
             .then(response => {
@@ -576,9 +586,9 @@
               // Terminar el procesamiento actual
               revisandoCola = false;
               
-              // Si hay más mensajes, procesar el siguiente
+              // Si hay más mensajes, procesar el siguiente inmediatamente
               if (colaMensajes.length > 0 && response.ok) {
-                setTimeout(() => procesarColaMensajes(manual), 1000);
+                procesarColaMensajes(manual);
               }
             })
             .catch(error => {
@@ -588,80 +598,6 @@
               }
             });
         });
-    }
-
-    function enviarNotificacionMovil(mensaje) {
-      // Primero intentamos enviar directamente
-      if (navigator.onLine) {
-        const opciones = {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(mensaje)
-        };
-        
-        fetch(DISCORD_WEBHOOK_URL, opciones)
-          .then(response => {
-            if (response.ok) {
-              mostrarNotificacion("¡Notificación enviada!");
-              return;
-            }
-            throw new Error("Falló el envío directo");
-          })
-          .catch(error => {
-            // Si falla, agregar a la cola
-            agregarMensajeACola(mensaje);
-            mostrarNotificacion("Notificación guardada para reintento.");
-          });
-      } else {
-        // Si no hay conexión, agregar a la cola
-        agregarMensajeACola(mensaje);
-        mostrarNotificacion("Sin conexión. Notificación guardada.");
-      }
-    }
-
-    function enviarNotificacionPC(mensaje) {
-      // Primero intentamos enviar directamente
-      if (navigator.onLine) {
-        const opciones = {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(mensaje)
-        };
-        
-        fetch(DISCORD_WEBHOOK_URL, opciones)
-          .then(response => {
-            if (response.ok) {
-              mostrarNotificacion("¡Notificación enviada!");
-              return;
-            }
-            throw new Error("Falló el envío directo");
-          })
-          .catch(error => {
-            // Intentamos con proxy
-            const PROXY_URL = "https://corsproxy.io/?url=";
-            fetch(PROXY_URL + encodeURIComponent(DISCORD_WEBHOOK_URL), opciones)
-              .then(response => {
-                if (response.ok) {
-                  mostrarNotificacion("¡Notificación enviada!");
-                  return;
-                }
-                throw new Error("Falló el envío con proxy");
-              })
-              .catch(error => {
-                // Si fallan ambos métodos, agregar a la cola
-                agregarMensajeACola(mensaje);
-                mostrarNotificacion("Notificación guardada para reintento.");
-              });
-          });
-      } else {
-        // Si no hay conexión, agregar a la cola
-        agregarMensajeACola(mensaje);
-        mostrarNotificacion("Sin conexión. Notificación guardada.");
-      }
     }
     
     // Función para mostrar notificación en la interfaz
