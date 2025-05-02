@@ -305,7 +305,10 @@
       canvas.style.height = "100px";
       
       const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Primero dibujamos un fondo blanco para asegurar que no sea transparente
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       
       // Escalar el contexto para compensar el aumento de resolución
       ctx.scale(factorEscala, factorEscala);
@@ -360,8 +363,21 @@
       const enlace = document.getElementById('descargarBtn');
       const canvas = document.getElementById('canvas');
       
-      // Pre-cargar la URL para evitar problemas en móviles
-      const imagenURL = canvas.toDataURL('image/png', 1.0);
+      // Asegurar que la imagen tenga fondo blanco antes de generar la URL
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      
+      // Dibujar fondo blanco
+      tempCtx.fillStyle = 'white';
+      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+      
+      // Dibujar la imagen del canvas original encima
+      tempCtx.drawImage(canvas, 0, 0);
+      
+      // Generar URL a partir del canvas temporal con fondo blanco
+      const imagenURL = tempCanvas.toDataURL('image/png', 1.0);
       enlace.href = imagenURL;
       
       // Limpiar cualquier evento previo para evitar duplicados
