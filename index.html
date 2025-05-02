@@ -26,6 +26,7 @@
       border: 1px solid #ccc;
       margin-top: 10px;
       max-width: 100%;
+      background-color: #FFFFFF; /* Fondo blanco puro para el canvas */
     }
     .hidden {
       display: none;
@@ -153,7 +154,7 @@
     let revisandoCola = false;
     
     // URL del webhook de Discord - ASEGÚRATE DE QUE ESTO SEA CORRECTO
-    const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364770233872683028/aO9YQi50PMv2LcaT8p_tmPVNQcNiUq9QBlZ20zZM52e6l9tsb70RA8Eg-GNpFCXZacbG";
+    const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364802693012521000/MBUF565wKk7lV_xJgy5e4JqNCOI-PYOCUm1E3VxuJt9DWQ8StrXVrQGK8IOmIa0tmfz9";
 
     // Cargar datos al iniciar
     window.onload = function() {
@@ -303,11 +304,12 @@
       // Mantener el tamaño visual en la página mediante CSS
       canvas.style.width = "200px";
       canvas.style.height = "100px";
+      canvas.style.backgroundColor = "#FFFFFF"; // Asegurar que el canvas tenga fondo blanco en la página
       
       const ctx = canvas.getContext('2d');
       
-      // Primero dibujamos un fondo blanco para asegurar que no sea transparente
-      ctx.fillStyle = "white";
+      // Primero dibujamos un fondo blanco puro para asegurar que no sea transparente
+      ctx.fillStyle = "#FFFFFF";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       
       // Escalar el contexto para compensar el aumento de resolución
@@ -317,7 +319,7 @@
       ctx.font = `${tamanio}px Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillStyle = "black";
+      ctx.fillStyle = "#000000"; // Negro puro para el texto
       
       // Asegurar que dibujamos en el centro correcto
       ctx.fillText(texto, canvas.width / (2 * factorEscala), canvas.height / (2 * factorEscala));
@@ -363,20 +365,20 @@
       const enlace = document.getElementById('descargarBtn');
       const canvas = document.getElementById('canvas');
       
-      // Asegurar que la imagen tenga fondo blanco antes de generar la URL
+      // Asegurar que la imagen tenga fondo blanco puro antes de generar la URL
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = canvas.width;
       tempCanvas.height = canvas.height;
       const tempCtx = tempCanvas.getContext('2d');
       
-      // Dibujar fondo blanco
-      tempCtx.fillStyle = 'white';
+      // Dibujar fondo blanco puro
+      tempCtx.fillStyle = '#FFFFFF';
       tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
       
       // Dibujar la imagen del canvas original encima
       tempCtx.drawImage(canvas, 0, 0);
       
-      // Generar URL a partir del canvas temporal con fondo blanco
+      // Generar URL a partir del canvas temporal con fondo blanco puro
       const imagenURL = tempCanvas.toDataURL('image/png', 1.0);
       enlace.href = imagenURL;
       
